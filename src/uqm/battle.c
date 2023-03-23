@@ -68,6 +68,8 @@ BattleFrameCounter battleFrameCount;
 		// Used for synchronisation purposes during netplay.
 #endif
 
+static BYTE interval = 24;
+
 BOOLEAN
 RunAwayAllowed (void)
 {
@@ -366,7 +368,7 @@ DoBattle (BATTLE_STATE *bs)
 	else
 	{
 		SleepThreadUntil (bs->NextTime
-				+ BATTLE_FRAME_RATE / (battle_speed + 1));
+				+ (ONE_SECOND / interval) / (battle_speed + 1));
 		bs->NextTime = GetTimeCounter ();
 	}
 
@@ -546,5 +548,16 @@ AbortBattle:
 #endif
 	
 	return (BOOLEAN) (num_ships < 0);
+}
+
+void ChangeBattleTickRate (void)
+{
+	interval += 3;
+
+	if (interval > 60)
+		interval = 3;
+
+	printf("DEBUG: Battle tick rate: %d\n", interval);
+	return;
 }
 

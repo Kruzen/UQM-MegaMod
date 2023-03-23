@@ -306,6 +306,7 @@ debugKey3PressedSynchronous (void)
 void
 debugKey4PressedSynchronous (void)
 {
+	ChangeBattleTickRate ();
 }
 
 // Can be called on any thread, but usually on main()

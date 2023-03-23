@@ -514,6 +514,8 @@ extern void font_DrawTracedTextAlt (TEXT* pText, Color text, Color trace, FONT A
 		UniChar key);
 extern void DrawBatch (PRIMITIVE *pBasePrim, PRIM_LINKS PrimLinks,
 		BATCH_FLAGS BatchFlags);
+extern void DrawDebugBatch (PRIMITIVE* pBasePrim, PRIM_LINKS PrimLinks,
+	BATCH_FLAGS BatchFlags);
 extern void BatchGraphics (void);
 extern void UnbatchGraphics (void);
 extern void FlushGraphics (void);

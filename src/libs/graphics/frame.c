@@ -186,6 +186,67 @@ DrawBatch (PRIMITIVE *lpBasePrim, PRIM_LINKS PrimLinks,
 }
 
 void
+DrawDebugBatch(PRIMITIVE* lpBasePrim, PRIM_LINKS PrimLinks,
+	BATCH_FLAGS BatchFlags)
+{
+	RECT ValidRect;
+	POINT origin;
+
+	if (GraphicsSystemActive() && GetContextValidRect(&ValidRect, &origin))
+	{
+		COUNT CurIndex;
+		PRIMITIVE* lpPrim;
+		DrawMode mode = _get_context_draw_mode();
+		SetContextBackGroundColor(BUILD_COLOR_RGBA(255, 255, 255, 255));
+
+		BatchGraphics();
+
+		if (BatchFlags & BATCH_BUILD_PAGE)
+		{
+			ClearBackGround(&ValidRect);
+		}
+
+		CurIndex = GetPredLink(PrimLinks);
+
+		for (; CurIndex != END_OF_LIST;
+			CurIndex = GetSuccLink(GetPrimLinks(lpPrim)))
+		{
+			GRAPHICS_PRIM PrimType;
+			PRIMITIVE* lpWorkPrim;
+			RECT ClipRect;
+			Color color;
+
+			lpPrim = &lpBasePrim[CurIndex];
+			PrimType = GetPrimType(lpPrim);
+			if (!ValidPrimType(PrimType))
+				continue;
+
+			lpWorkPrim = lpPrim;
+
+			switch (PrimType)
+			{
+			case POINT_PRIM:
+				TFB_Prim_Point(&lpWorkPrim->Object.Point, BUILD_COLOR_RGBA(255, 0, 255, 255),
+					mode, origin, FALSE);
+				break;
+			case LINE_PRIM:
+				TFB_Prim_Line(&lpWorkPrim->Object.Line, BUILD_COLOR_RGBA(0,0,0,255),
+					mode, origin, RES_BOOL(1, 3));
+				break;
+			default:
+				TFB_Prim_StampFill(&lpWorkPrim->Object.Stamp, BUILD_COLOR_RGBA(0, 0, 0, 255),
+					mode, origin);
+				TFB_Prim_Point(&lpWorkPrim->Object.Point, BUILD_COLOR_RGBA(255, 0, 255, 255),
+					mode, origin, FALSE);
+				break;
+			}			
+		}
+
+		UnbatchGraphics();
+	}
+}
+
+void
 ClearDrawable (void)
 {
 	RECT ValidRect;

@@ -55,6 +55,9 @@
 #define BLAZER_DAMAGE 3
 #define BLAZER_MASS 1
 
+// Blazer special
+#define BLAZER_ANIMATION_WAIT 11
+
 static RACE_DESC androsynth_desc =
 {
 	{ /* SHIP_INFO */
@@ -366,6 +369,88 @@ androsynth_intelligence (ELEMENT *ShipPtr, EVALUATE_DESC *ObjectsOfConcern,
 	}
 }
 
+// Borrowed from balance mod
+static void
+spawn_blazer_trail (ELEMENT* ElementPtr)
+{
+#define START_BLAZER_COLOR BUILD_COLOR (MAKE_RGB15 (0x10, 0x00, 0x09), 0)
+
+	if (ElementPtr->state_flags & PLAYER_SHIP)
+	{
+		HELEMENT hTrailElement;
+
+		hTrailElement = AllocElement();
+		if (hTrailElement)
+		{
+			HELEMENT hHeadElement;
+			ELEMENT* TrailElementPtr, * HeadElementPtr;
+			STARSHIP* StarShipPtr;
+
+			GetElementStarShip(ElementPtr, &StarShipPtr);
+
+			hHeadElement = GetHeadElement();
+			LockElement(hHeadElement, &HeadElementPtr);
+			if (HeadElementPtr == ElementPtr)
+				InsertElement(hTrailElement, GetHeadElement());
+			else
+				InsertElement(hTrailElement, GetPredElement(ElementPtr));
+			UnlockElement(hHeadElement);
+
+			LockElement(hTrailElement, &TrailElementPtr);
+			TrailElementPtr->state_flags = APPEARING | FINITE_LIFE | NONSOLID;
+			TrailElementPtr->life_span = TrailElementPtr->thrust_wait = 1;
+			SetPrimType(&DisplayArray[TrailElementPtr->PrimIndex], STAMPFILL_PRIM);
+			SetPrimColor(&DisplayArray[TrailElementPtr->PrimIndex], START_BLAZER_COLOR);
+			TrailElementPtr->current.image.frame = ElementPtr->current.image.frame;
+			TrailElementPtr->current.image.farray = ElementPtr->current.image.farray;
+			TrailElementPtr->current.location = ElementPtr->current.location;
+			TrailElementPtr->death_func = spawn_blazer_trail;
+			TrailElementPtr->turn_wait = 0;
+
+			SetElementStarShip(TrailElementPtr, StarShipPtr);
+
+			{
+				/* normally done during preprocess, but because
+				 * object is being inserted at head rather than
+				 * appended after tail it may never get preprocessed.
+				 */
+				TrailElementPtr->next = TrailElementPtr->current;
+				--TrailElementPtr->life_span;
+				TrailElementPtr->state_flags |= PRE_PROCESS;
+			}
+
+			UnlockElement(hTrailElement);
+		}
+	}
+	else
+	{
+		static const Color colorTab[] =
+		{
+			BUILD_COLOR(MAKE_RGB15_INIT(0x0D, 0x00, 0x08), 0),
+			BUILD_COLOR(MAKE_RGB15_INIT(0x08, 0x00, 0x06), 0),
+		};
+		const size_t colorTabCount = sizeof colorTab / sizeof colorTab[0];
+
+		assert(!(ElementPtr->state_flags & PLAYER_SHIP));
+
+		if (ElementPtr->turn_wait < colorTabCount)
+		{
+			ElementPtr->life_span = ElementPtr->thrust_wait;
+			// Reset the life span
+
+			++ElementPtr->turn_wait;
+
+			SetPrimColor(&DisplayArray[ElementPtr->PrimIndex],
+				colorTab[ElementPtr->colorCycleIndex]);
+
+			ElementPtr->state_flags &= ~DISAPPEARING;
+			ElementPtr->state_flags |= CHANGING;
+		} // else, the element disappears
+
+		ElementPtr->colorCycleIndex++;
+	}
+}
+
 static void
 androsynth_postprocess (ELEMENT *ElementPtr)
 {
@@ -388,7 +473,7 @@ androsynth_postprocess (ELEMENT *ElementPtr)
 						StarShipPtr->RaceDescPtr->ship_data.ship_sounds, 1),
 						ElementPtr);  /* COMET_ON */
 				ElementPtr->turn_wait = 0;
-				ElementPtr->thrust_wait = 0;
+				ElementPtr->thrust_wait = BLAZER_ANIMATION_WAIT;
 				StarShipPtr->RaceDescPtr->characteristics.special_wait =
 						StarShipPtr->RaceDescPtr->characteristics.turn_wait;
 				ElementPtr->mass_points = BLAZER_MASS;
@@ -493,32 +578,45 @@ androsynth_preprocess (ELEMENT *ElementPtr)
 			ElementPtr->next.image.frame =
 					SetEquFrameIndex (StarShipPtr->RaceDescPtr->ship_data.ship[0],
 					ElementPtr->next.image.frame);
+			ElementPtr->thrust_wait = 0;
 			ElementPtr->state_flags |= CHANGING;
 		}
 		else
 		{
+			COUNT facing;
+			COUNT offset;
+
 			cur_status_flags |= SPECIAL;
+			facing = StarShipPtr->ShipFacing;
+			offset = ElementPtr->thrust_wait >> 2;
 
-			if (ElementPtr->thrust_wait)
-				--ElementPtr->thrust_wait;
-			else
+			if (ElementPtr->turn_wait == 0
+				&& (cur_status_flags & (LEFT | RIGHT)))
 			{
-				COUNT facing;
+				ElementPtr->turn_wait +=
+					StarShipPtr->RaceDescPtr->characteristics.turn_wait + 1;
+				if (cur_status_flags & LEFT)
+					--facing;
+				else
+					++facing;
 
-				facing = StarShipPtr->ShipFacing;
-				if (ElementPtr->turn_wait == 0
-						&& (cur_status_flags & (LEFT | RIGHT)))
-				{
-					if (cur_status_flags & LEFT)
-						--facing;
-					else
-						++facing;
-				}
-
-				SetVelocityVector (&ElementPtr->velocity,
-						BLAZER_THRUST, NORMALIZE_FACING (facing));
-				cur_status_flags |= SHIP_AT_MAX_SPEED | SHIP_BEYOND_MAX_SPEED;
+				StarShipPtr->ShipFacing =
+					NORMALIZE_FACING (facing);
 			}
+			
+			if (ElementPtr->thrust_wait == 0)
+				ElementPtr->thrust_wait = BLAZER_ANIMATION_WAIT + 1;
+
+			SetVelocityVector (&ElementPtr->velocity,
+				BLAZER_THRUST, NORMALIZE_FACING (facing));
+			ElementPtr->next.image.frame =
+						SetAbsFrameIndex (ElementPtr->next.image.frame,
+							NORMALIZE_FACING (facing) + (offset * ANGLE_TO_FACING (FULL_CIRCLE)));
+			ElementPtr->state_flags |= CHANGING;
+
+			spawn_blazer_trail (ElementPtr);
+			
+			cur_status_flags |= SHIP_AT_MAX_SPEED | SHIP_BEYOND_MAX_SPEED;
 		}
 	}
 	StarShipPtr->cur_status_flags = cur_status_flags;
