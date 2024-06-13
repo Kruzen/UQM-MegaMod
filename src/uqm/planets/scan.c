@@ -668,17 +668,27 @@ void
 RedrawSurfaceScan (const POINT *newLoc)
 {
 	CONTEXT OldContext;
+	static COUNT alpha = 0;
 
 	OldContext = SetContext (ScanContext);
 
 	BatchGraphics ();
-	DrawPlanet (0, BLACK_COLOR);
-	DrawScannedObjects (TRUE);
 	if (newLoc)
 	{
+		DrawPlanet (alpha, NULL_COLOR);
+		DrawScannedObjects (TRUE);
+		if (alpha < 0xA0)
+			alpha += 10;
 		setPlanetLoc (*newLoc, FALSE);
 	 	drawPlanetCursor (FALSE);
 	}
+	else
+	{
+		DrawPlanet (0, BLACK_COLOR);
+		DrawScannedObjects (TRUE);
+		alpha = 0;
+	}
+
 	UnbatchGraphics ();
 
 	SetContext (OldContext);

@@ -21,6 +21,7 @@
 #include "resinst.h"
 
 #include "libs/mathlib.h"
+#include "libs/gfxlib.h"
 
 // Core characteristics
 #define MAX_CREW 10
@@ -167,9 +168,27 @@ cone_preprocess (ELEMENT *ElementPtr)
 	STARSHIP *StarShipPtr;
 
 	GetElementStarShip (ElementPtr, &StarShipPtr);
-	StarShipPtr->RaceDescPtr->ship_data.special[0] =
-			SetRelFrameIndex (StarShipPtr->RaceDescPtr->ship_data.special[0],
-			ANGLE_TO_FACING (FULL_CIRCLE));
+
+	ApplyMask (StarShipPtr->RaceDescPtr->ship_data.weapon[0], 
+		SetAbsFrameIndex (
+				StarShipPtr->RaceDescPtr->ship_data.special[0],
+				StarShipPtr->ShipFacing),
+		MAKE_DRAW_MODE (DRAW_REPLACE, DRAW_FACTOR_1), NULL);
+	ApplyMask (StarShipPtr->RaceDescPtr->ship_data.weapon[0], 
+		SetAbsFrameIndex (
+				StarShipPtr->RaceDescPtr->ship_data.special[1],
+				StarShipPtr->ShipFacing),
+		MAKE_DRAW_MODE (DRAW_REPLACE, DRAW_FACTOR_1), NULL);
+	ApplyMask (StarShipPtr->RaceDescPtr->ship_data.weapon[0], 
+		SetAbsFrameIndex (
+				StarShipPtr->RaceDescPtr->ship_data.special[2],
+				StarShipPtr->ShipFacing),
+		MAKE_DRAW_MODE (DRAW_REPLACE, DRAW_FACTOR_1), NULL);
+
+	StarShipPtr->RaceDescPtr->ship_data.weapon[0] =
+			SetRelFrameIndex (StarShipPtr->RaceDescPtr->ship_data.weapon[0],
+			1);
+
 
 	ElementPtr->state_flags |= APPEARING;
 }
@@ -316,7 +335,7 @@ initialize_cone (ELEMENT *ShipPtr, HELEMENT ConeArray[])
 	MissileBlock.cx = ShipPtr->next.location.x;
 	MissileBlock.cy = ShipPtr->next.location.y;
 	MissileBlock.farray = StarShipPtr->RaceDescPtr->ship_data.special;
-	MissileBlock.face = StarShipPtr->ShipFacing;
+	MissileBlock.face = MissileBlock.index = StarShipPtr->ShipFacing;
 	MissileBlock.sender = ShipPtr->playerNr;
 	MissileBlock.flags = IGNORE_SIMILAR;
 	MissileBlock.pixoffs = UMGAH_OFFSET;
@@ -326,23 +345,6 @@ initialize_cone (ELEMENT *ShipPtr, HELEMENT ConeArray[])
 	MissileBlock.life = CONE_LIFE;
 	MissileBlock.preprocess_func = cone_preprocess;
 	MissileBlock.blast_offs = CONE_OFFSET;
-
-	// This func is called every frame while the player is holding down WEAPON
-	// Don't reset the cone FRAME to the first image every time
-	UmgahData = GetCustomShipData (StarShipPtr->RaceDescPtr);
-	if (!UmgahData || StarShipPtr->ShipFacing != UmgahData->prevFacing)
-	{
-		const UMGAH_DATA shipData = {StarShipPtr->ShipFacing};
-
-		SetCustomShipData (StarShipPtr->RaceDescPtr, &shipData);
-
-		StarShipPtr->RaceDescPtr->ship_data.special[0] =
-				SetAbsFrameIndex (
-				StarShipPtr->RaceDescPtr->ship_data.special[0],
-				StarShipPtr->ShipFacing);
-	}
-	
-	MissileBlock.index = GetFrameIndex (StarShipPtr->RaceDescPtr->ship_data.special[0]);
 	ConeArray[0] = initialize_missile (&MissileBlock);
 
 	if (ConeArray[0])
@@ -356,7 +358,9 @@ initialize_cone (ELEMENT *ShipPtr, HELEMENT ConeArray[])
 		InitIntersectStartPoint (ConePtr);
 		InitIntersectEndPoint (ConePtr);
 		ConePtr->IntersectControl.IntersectStamp.frame =
-				StarShipPtr->RaceDescPtr->ship_data.special[0];
+				SetAbsFrameIndex (
+				StarShipPtr->RaceDescPtr->ship_data.special[0],
+				StarShipPtr->ShipFacing);
 		UnlockElement (ConeArray[0]);
 	}
 

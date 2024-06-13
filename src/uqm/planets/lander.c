@@ -2051,6 +2051,29 @@ landerSpeedNumer = WORLD_TO_VELOCITY (RES_SCALE (48));
 	return TRUE;
 }
 
+static void
+MaskLanderGraphics (void)
+{
+	COUNT i,j;
+	FRAME mods = CaptureDrawable (LoadGraphic (LANDER_MODS_PMAP_ANIM));
+	FRAME lander;
+	FRAME mask;
+	DrawMode mode = MAKE_DRAW_MODE (DRAW_REPLACE, DRAW_FACTOR_1);
+
+	for (j = 0; j < 3; j++)
+	{
+		for (i = 0; i < 16; i++)
+		{
+			mask = SetAbsFrameIndex (mods, i + (j * 16));
+			lander = SetAbsFrameIndex (LanderFrame[0], i);
+			ApplyMask (mask, lander, mode, NULL);
+		}
+	}
+
+	DestroyDrawable (ReleaseDrawable (mods));
+	mods = 0;
+}
+
 void
 FreeLanderData (void)
 {

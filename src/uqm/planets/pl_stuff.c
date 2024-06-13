@@ -540,6 +540,17 @@ DrawPlanet (int tintY, Color tintColor)
 		s.frame = pSolarSysState->TopoFrame;
 		DrawStamp (&s);
 	}
+	else if (sameColor (tintColor, NULL_COLOR))
+	{	// darker tint
+		RECT r;
+
+		s.frame = pSolarSysState->TopoFrame;
+		DrawStamp (&s);
+		GetFrameRect (s.frame, &r);
+		tintColor.a = tintY & 0xFF;
+		SetContextForeGroundColor (tintColor);
+		DrawFilledRectangle (&r);
+	}
 	else
 	{	// apply different scan type tints
 		FRAME tintFrame = Orbit->TintFrame;
