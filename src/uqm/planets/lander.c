@@ -76,6 +76,8 @@ static CONTEXT PCLanderContext;
 static CONTEXT LanderContext;
 static MUSIC_REF OrbitMusic[NUM_ORBIT_THEMES];
 
+static int CrewTimeOut = 0;
+
 LIFEFORM_DESC CreatureData[] =
 {
 	{SPEED_MOTIONLESS | DANGER_HARMLESS, MAKE_BYTE (1, 1)},
@@ -177,7 +179,7 @@ extern PRIM_LINKS DisplayLinks;
 #define NO_COLLISION (1 << 3)
 #define REPAIR_COUNT (0xf)
 
-#define LANDER_SPEED_DENOM (isPC (optSuperPC) ? 14 : 10)
+#define LANDER_SPEED_DENOM (optLanderView == 0 ? 14 : 10)
 
 static BYTE lander_flags;
 static POINT curLanderLoc;
@@ -572,17 +574,50 @@ DeltaLanderCrew (SIZE crew_delta, COUNT which_disaster)
 			shieldHit = which_disaster + 1;
 			return;
 		}
+
+		if (optLanderView == 3)
+			CrewTimeOut = NUM_CREW_FRAMES;
 	}
+
+	if (optLanderView == 3 && CrewTimeOut > 0)
+		return;
 
 	OldContext = SetContext (LanderContext);
 
 	s.origin.x = crew_x_offs + (RES_SCALE (6)
-					* (crew_delta % num_crew_cols));
+		* (crew_delta % num_crew_cols));
 	s.origin.y = crew_y_offs - (RES_SCALE (6)
-					* (crew_delta / num_crew_cols));
+		* (crew_delta / num_crew_cols));
 
 	DrawStamp (&s);
 	SetContext (OldContext);
+}
+
+static void
+FullScreenLanderCrew (void)
+{
+	int i;
+	RECT r;
+	POINT baseline;
+
+	if (CrewTimeOut == 0)
+		return;
+
+	r.extent.width = RES_SCALE (3);
+	r.extent.height = RES_SCALE (3);
+
+	baseline.x = (SCREEN_WIDTH >> 1) - (RES_SCALE (4) * (num_crew_cols - 1) / 2);
+	baseline.y = (SCREEN_HEIGHT >> 1) + RES_SCALE (12) + RES_SCALE (2);
+
+	for (i = 0; i < crew_left; ++i)
+	{
+		r.corner.x = baseline.x + (RES_SCALE (4) * (i % num_crew_cols));
+		r.corner.y = baseline.y - (RES_SCALE (4) * (i / num_crew_cols));
+		DrawStarConBox (&r, RES_SCALE (1), BLACK_COLOR, BLACK_COLOR,
+				TRUE, BRIGHT_GREEN_COLOR, FALSE, NULL_COLOR);
+	}
+
+	CrewTimeOut--;
 }
 
 static void
@@ -600,7 +635,7 @@ FillLanderHold (PLANETSIDE_DESC *pPSD, COUNT scan, COUNT NumRetrieved)
 		start_count = pPSD->BiologicalLevel;
 
 		s.frame = SetAbsFrameIndex (
-				(isPC (optSuperPC) ? LanderFrame[7] : LanderFrame[0]), 41);
+				(optLanderView == 0 ? LanderFrame[7] : LanderFrame[0]), 41);
 
 		pPSD->BiologicalLevel += NumRetrieved;
 	}
@@ -615,7 +650,7 @@ FillLanderHold (PLANETSIDE_DESC *pPSD, COUNT scan, COUNT NumRetrieved)
 		}
 
 		s.frame = SetAbsFrameIndex (
-			(isPC (optSuperPC) ? LanderFrame[7] : LanderFrame[0]), 43);
+			(optLanderView == 0 ? LanderFrame[7] : LanderFrame[0]), 43);
 	}
 
 	tmpholdint =
@@ -639,7 +674,10 @@ FillLanderHold (PLANETSIDE_DESC *pPSD, COUNT scan, COUNT NumRetrieved)
 			s.frame = IncFrameIndex (s.frame);
 		else
 			s.frame = DecFrameIndex (s.frame);
-		DrawStamp(&s);
+
+		if (optLanderView < 3)
+			DrawStamp(&s);
+
 		s.origin.y -= RES_SCALE (1);
 	}
 	SetContext (OldContext);
@@ -1464,10 +1502,14 @@ ScrollPlanetSide (SIZE dx, SIZE dy, int landingOffset)
 	
 	curLanderLoc = new_pt;
 
-	if (is3DO (optSuperPC))
-		OldContext = SetContext (PlanetContext);
-	else
+	if (optLanderView == 0)
 		OldContext = SetContext (RadarContext);
+	else if (optLanderView == 1)
+		OldContext = SetContext (PlanetContext);
+	else if (optLanderView == 2)
+		OldContext = SetContext (SpaceContext);
+	else
+		OldContext = SetContext (ScreenContext);
 
 	BatchGraphics ();
 
@@ -1557,7 +1599,7 @@ ScrollPlanetSide (SIZE dx, SIZE dy, int landingOffset)
 			SetContextForeGroundColor (
 					pPSD->ColorCycle[pPSD->NumFrames >> 1]);
 
-			if (isPC (optSuperPC))
+			if (optLanderView == 0)
 			{
 				pPSD->MineralText[0].baseline.x = RADAR_WIDTH >> 1;
 				pPSD->MineralText[0].baseline.y = RES_SCALE (8);
@@ -1590,18 +1632,20 @@ ScrollPlanetSide (SIZE dx, SIZE dy, int landingOffset)
 		}
 	}
 
-	RedrawSurfaceScan (&new_pt);
+	if (optLanderView < 2)
+		RedrawSurfaceScan (&new_pt);
 
 	if (lander_flags & KILL_CREW)
 		DeltaLanderCrew (-1, LIGHTNING_DISASTER);
 
-	if (isPC (optSuperPC))
+	if (optLanderView == 0)
 	{
 		DrawRadarBorder ();
 		RotatePlanetSphere (TRUE, NULL);
 	}
 
-
+	if (optLanderView == 3)
+		FullScreenLanderCrew ();
 
 	UnbatchGraphics ();
 
@@ -1653,7 +1697,7 @@ AnimateLaunch (FRAME farray, BOOLEAN isLanding)
 
 		Now = GetTimeCounter ();
 
-		if (!isLanding && isPC (optSuperPC) && Now >= psNextTime)
+		if (!isLanding && optLanderView == 0 && Now >= psNextTime)
 		{
 			// 10 to clear the lander off of the screen
 			ScrollPlanetSide (0, 0,
@@ -1693,7 +1737,7 @@ AnimateLanderWarmup (void)
 	s.origin.y = 0;
 
 	s.frame = SetAbsFrameIndex (
-			is3DO (optSuperPC) ? LanderFrame[0] : LanderFrame[7],
+			optLanderView ? LanderFrame[0] : LanderFrame[7],
 			(ANGLE_TO_FACING (FULL_CIRCLE) << 1) + 1);
 
 	DrawStamp (&s);
@@ -1772,7 +1816,7 @@ InitPlanetSide (POINT pt)
 	else if (pt.y >= (MAP_HEIGHT << MAG_SHIFT))
 		pt.y = (MAP_HEIGHT << MAG_SHIFT) - 1;
 
-	if (isPC (optSuperPC))
+	if (optLanderView == 0)
 	{
 		SetContext (RadarContext);
 		SetContextBackGroundColor (BLACK_COLOR);
@@ -1781,10 +1825,20 @@ InitPlanetSide (POINT pt)
 
 		DrawMineralHelpers ();
 	}
-	else
+	else if (optLanderView == 1)
 	{
 		SetContext (PlanetContext);
 		MapSurface = MAKE_EXTENT (SURFACE_WIDTH, SURFACE_HEIGHT);
+	}
+	else if (optLanderView == 2)
+	{
+		SetContext (SpaceContext);
+		MapSurface = MAKE_EXTENT (SIS_SCREEN_WIDTH, SIS_SCREEN_HEIGHT);
+	}
+	else
+	{
+		SetContext (ScreenContext);
+		MapSurface = MAKE_EXTENT (SCREEN_WIDTH, SCREEN_HEIGHT);
 	}
 
 	curLanderLoc = pt;
@@ -1801,6 +1855,9 @@ InitPlanetSide (POINT pt)
 
 		SetTransitionSource(&r);
 		BatchGraphics();
+
+		if (optLanderView == 2)
+			RepairSISBorder ();
 		
 		{
 			STAMP s;
@@ -1820,7 +1877,7 @@ InitPlanetSide (POINT pt)
 
 			DrawRadarArea ();
 
-			if (!isPC (optSuperPC))
+			if (optLanderView)
 				ScreenTransition (optScrTrans, &r);
 		}		
 		UnbatchGraphics ();
@@ -1832,7 +1889,7 @@ InitPlanetSide (POINT pt)
 static void
 LanderFire (SIZE facing)
 {
-#define SHUTTLE_FIRE_WAIT (isPC (optSuperPC) ? 10 : 14)
+#define SHUTTLE_FIRE_WAIT (optLanderView == 0 ? 10 : 14)
 	HELEMENT hWeaponElement;
 	SIZE wdx, wdy;
 	ELEMENT *WeaponElementPtr;
@@ -2127,7 +2184,7 @@ DoPlanetSide (LanderInputState *pMS)
 	SIZE dx = 0;
 	SIZE dy = 0;
 
-#define SHUTTLE_TURN_WAIT (isPC (optSuperPC) ? 1 : 3)
+#define SHUTTLE_TURN_WAIT (optLanderView == 0 ? 1 : 3)
 	if (GLOBAL (CurrentActivity) & CHECK_ABORT)
 		return (FALSE);
 
@@ -2411,13 +2468,22 @@ ReturnToOrbit (void)
 	CONTEXT OldContext;
 	RECT r;
 
-	if (is3DO (optSuperPC))
+	if (optLanderView)
 	{
 		OldContext = SetContext (PlanetContext);
 		GetContextClipRect (&r);
 
 		SetTransitionSource (&r);
 		BatchGraphics ();
+
+		if (optLanderView == 3)
+		{
+			DrawSISFrame ();
+			DrawMineralHelpers ();
+			DrawMenuStateStrings (PM_MIN_SCAN, DISPATCH_SHUTTLE);
+		}
+		else if (optLanderView == 2)
+			RepairSISBorder ();
 
 		DrawStarBackGround ();
 		DrawDefaultPlanetSphere ();
@@ -2442,7 +2508,7 @@ ReturnToOrbit (void)
 
 		DrawRadarArea ();
 
-		if (!isPC (optSuperPC))
+		if (optLanderView)
 			ScreenTransition (optScrTrans, &r);
 
 		RedrawSurfaceScan (NULL);
@@ -2746,7 +2812,7 @@ PlanetSide (POINT planetLoc)
 
 			LandingTakeoffSequence (&landerInputState, FALSE);
 
-			if (is3DO (optSuperPC))
+			if (optLanderView)
 				ReturnToOrbit ();
 
 			AnimateLaunch (LanderFrame[6], FALSE);
@@ -2775,7 +2841,7 @@ PlanetSide (POINT planetLoc)
 
 			GLOBAL_SIS (TotalBioMass) += PSD.BiologicalLevel;
 
-			if (isPC (optSuperPC))
+			if (optLanderView == 0)
 			{
 				ReturnToOrbit ();
 				InitPCLander (FALSE);
