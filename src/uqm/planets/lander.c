@@ -39,6 +39,8 @@
 #include "options.h"
 #include "uqm/menustat.h"
 #include "../util.h"
+#include "libs/gfxlib.h"
+#include "libs/graphics/widgets.h"
 
 //define SPIN_ON_LAUNCH to let the planet spin while
 // the lander animation is playing
@@ -77,6 +79,7 @@ static CONTEXT LanderContext;
 static MUSIC_REF OrbitMusic[NUM_ORBIT_THEMES];
 
 static int CrewTimeOut = 0;
+static int CargoTimeOut = 0;
 
 LIFEFORM_DESC CreatureData[] =
 {
@@ -593,31 +596,134 @@ DeltaLanderCrew (SIZE crew_delta, COUNT which_disaster)
 	SetContext (OldContext);
 }
 
+#define WS_BASELINE_X ((SCREEN_WIDTH >> 1) - (RES_SCALE (4) * (num_crew_cols - 1) / 2))
+#define WS_BASELINE_Y ((SCREEN_HEIGHT >> 1) + RES_SCALE (8) + RES_SCALE (2))
+
 static void
 FullScreenLanderCrew (void)
 {
 	int i;
 	RECT r;
-	POINT baseline;
+
+	if (crew_left == 0)
+	{
+		CrewTimeOut = 0;
+		return;
+	}
 
 	if (CrewTimeOut == 0)
 		return;
 
+	r.corner = MAKE_POINT (0, 0);
 	r.extent.width = RES_SCALE (3);
 	r.extent.height = RES_SCALE (3);
 
-	baseline.x = (SCREEN_WIDTH >> 1) - (RES_SCALE (4) * (num_crew_cols - 1) / 2);
-	baseline.y = (SCREEN_HEIGHT >> 1) + RES_SCALE (12) + RES_SCALE (2);
-
 	for (i = 0; i < crew_left; ++i)
 	{
-		r.corner.x = baseline.x + (RES_SCALE (4) * (i % num_crew_cols));
-		r.corner.y = baseline.y - (RES_SCALE (4) * (i / num_crew_cols));
+		r.corner.x = WS_BASELINE_X + (RES_SCALE (4) * (i % num_crew_cols));
+		r.corner.y = WS_BASELINE_Y + (RES_SCALE (4) * (i / num_crew_cols));
 		DrawStarConBox (&r, RES_SCALE (1), BLACK_COLOR, BLACK_COLOR,
 				TRUE, BRIGHT_GREEN_COLOR, FALSE, NULL_COLOR);
 	}
 
 	CrewTimeOut--;
+}
+
+#define CREW_SHIFT (RES_SCALE (8) - (crew_left < 7 ? RES_SCALE (4) : 0))
+#define ELEMENT_SHIFT (pPSD->ElementLevel == 0 ? RES_SCALE (4) : 0)
+
+static void
+WholeScreenCargo (void)
+{
+	RECT r;
+	Color old_color;
+	PLANETSIDE_DESC *pPSD;
+	float element_percent = 0.0f;
+
+	if (crew_left == 0)
+	{
+		CargoTimeOut = 0;
+		return;
+	}
+
+	if (CargoTimeOut == 0)
+		return;
+
+	pPSD = planetSideDesc;
+
+	old_color = SetContextForeGroundColor (BRIGHT_RED_COLOR);
+
+	// Minerals Bar
+	if (pPSD->ElementLevel > 0)
+	{
+		r.corner = MAKE_POINT (WS_BASELINE_X, WS_BASELINE_Y);
+		if (CrewTimeOut)
+			r.corner.y = WS_BASELINE_Y + CREW_SHIFT;
+
+		r.extent.width = RES_SCALE (23);
+		r.extent.height = RES_SCALE (3);
+
+		DrawStarConBox (&r, RES_SCALE (1), BLACK_COLOR, BLACK_COLOR,
+			TRUE, BUILD_COLOR_RGB (64, 0, 0), FALSE, NULL_COLOR);
+
+		r.corner.x = WS_BASELINE_X + RES_SCALE (1);
+		r.corner.y = WS_BASELINE_Y + RES_SCALE (1);
+		r.extent.height = RES_SCALE (1);
+
+		if (CrewTimeOut)
+			r.corner.y = WS_BASELINE_Y + RES_SCALE (1) + CREW_SHIFT;
+
+		element_percent =
+					(float)pPSD->ElementLevel / (float)pPSD->MaxElementLevel;
+		if (element_percent > 0.04f)
+		{
+			r.extent.width = RES_SCALE (21) * element_percent;
+			DrawFilledRectangle (&r);
+		}
+	}
+
+	// Biologicals Bar
+	if (pPSD->BiologicalLevel > 0)
+	{
+		r.corner = MAKE_POINT (WS_BASELINE_X, WS_BASELINE_Y +
+				RES_SCALE (4) - ELEMENT_SHIFT);
+
+		if (CrewTimeOut)
+		{
+			r.corner.y = WS_BASELINE_Y + RES_SCALE (4) +
+					CREW_SHIFT - ELEMENT_SHIFT;
+		}
+
+		r.extent.width = RES_SCALE (23);
+		r.extent.height = RES_SCALE (3);
+
+		DrawStarConBox (&r, RES_SCALE (1), BLACK_COLOR, BLACK_COLOR,
+			TRUE, BUILD_COLOR_RGB (0, 0, 64), FALSE, NULL_COLOR);
+
+
+		r.corner.x = WS_BASELINE_X + RES_SCALE (1);
+		r.corner.y = WS_BASELINE_Y + RES_SCALE (5) - ELEMENT_SHIFT;
+		r.extent.height = RES_SCALE (1);
+
+		if (CrewTimeOut)
+		{
+			r.corner.y = WS_BASELINE_Y + RES_SCALE (5) +
+					CREW_SHIFT - ELEMENT_SHIFT;
+		}
+
+		SetContextForeGroundColor (BRIGHT_BLUE_COLOR);
+
+		element_percent = (float)pPSD->BiologicalLevel / (float)MAX_SCROUNGED;
+		if (element_percent > 0.04f)
+		{
+			r.extent.width = RES_SCALE (21) * element_percent;
+			DrawFilledRectangle (&r);
+		}
+	}
+
+	SetContextForeGroundColor (old_color);
+
+	CargoTimeOut--;
 }
 
 static void
@@ -629,6 +735,8 @@ FillLanderHold (PLANETSIDE_DESC *pPSD, COUNT scan, COUNT NumRetrieved)
 
 	PlaySound (SetAbsSoundIndex (LanderSounds, LANDER_PICKUP),
 			NotPositional (), NULL, GAME_SOUND_PRIORITY);
+
+	CargoTimeOut = NUM_CREW_FRAMES;
 
 	if (scan == BIOLOGICAL_SCAN)
 	{
@@ -1079,7 +1187,8 @@ CheckObjectCollision (COUNT index)
 					else if (scan == ENERGY_SCAN)
 					{
 						// noop; handled by generation funcs, see below
-						DrawRadarArea ();
+						if (optLanderView < 3)
+							DrawRadarArea ();
 					}
 					else if (scan == BIOLOGICAL_SCAN
 							&& ElementPtr->hit_points)
@@ -1645,7 +1754,10 @@ ScrollPlanetSide (SIZE dx, SIZE dy, int landingOffset)
 	}
 
 	if (optLanderView == 3)
+	{
 		FullScreenLanderCrew ();
+		WholeScreenCargo ();
+	}
 
 	UnbatchGraphics ();
 
@@ -1856,30 +1968,20 @@ InitPlanetSide (POINT pt)
 		SetTransitionSource(&r);
 		BatchGraphics();
 
+		ClearDrawable ();
+
 		if (optLanderView == 2)
 			RepairSISBorder ();
-		
-		{
-			STAMP s;
 
-			// Note - This code is the same as in ScrollPlanetSize,
-			// Display planet area, accounting for horizontal wrapping if
-			// near the edges.
-			ClearDrawable ();
-			s.origin.x = -pt.x + (MapSurface.width >> 1);
-			s.origin.y = -pt.y + (MapSurface.height >> 1);
-			s.frame = pSolarSysState->Orbit.TopoZoomFrame;
-			DrawStamp (&s);
-			s.origin.x += SCALED_MAP_WIDTH << MAG_SHIFT;
-			DrawStamp (&s);
-			s.origin.x -= SCALED_MAP_WIDTH << (MAG_SHIFT + 1);
-			DrawStamp (&s);
+		// 10 to clear the lander off of the screen
+		ScrollPlanetSide (0, 0, -(MapSurface.height / 2 + RES_SCALE (10)));
 
+		if (optLanderView < 3)
 			DrawRadarArea ();
 
-			if (optLanderView)
-				ScreenTransition (optScrTrans, &r);
-		}		
+		if (optLanderView)
+			ScreenTransition (optScrTrans, &r);
+
 		UnbatchGraphics ();
 	}
 
@@ -2479,6 +2581,7 @@ ReturnToOrbit (void)
 		if (optLanderView == 3)
 		{
 			DrawSISFrame ();
+			DrawStatusMessage ("FARTS");
 			DrawMineralHelpers ();
 			DrawMenuStateStrings (PM_MIN_SCAN, DISPATCH_SHUTTLE);
 		}
@@ -2547,7 +2650,7 @@ LandingTakeoffSequence (LanderInputState *inputState, BOOLEAN landing)
 	int delta;
 	int index;
 	int max_offsets; 
-	int landingOfsHD[MAX_OFFSETS_HD]; 
+	int landingOfsHD[MAX_OFFSETS_HD];
 
 	// Produce smooth acceleration deltas from a simple 1..x progression
 	delta = 0;
@@ -2598,6 +2701,9 @@ LandingTakeoffSequence (LanderInputState *inputState, BOOLEAN landing)
 
 	if (!landing)
 		IdlePlanetSide (inputState, ONE_SECOND / 2);
+
+	CrewTimeOut = 0;
+	CargoTimeOut = 0;
 }
 
 void
@@ -2658,7 +2764,7 @@ KillLanderCrewSeq (COUNT numKilled, BOOLEAN extraSFX)
 		if (!damage_ticks)
 			damage_index = 0;
 		else
-			damage_index = (TFB_Random () % 5) + 2;			
+			damage_index = (TFB_Random () % 5) + 2;
 
 		ScrollPlanetSide (0, 0, ON_THE_GROUND);
 		SleepThreadUntil (timeout);
